@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  academic
+  teacher
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum StudentMainStatus {
+  pre_sale
+  studying
+  paused
+  finished
+  refunded
+  lost
+}
+
+enum PreSaleStage {
+  new_lead
+  contacted
+  trial_scheduled
+  trial_no_show
+  trial_done
+  after_trial_followup
+  converted
+  postponed
+  abandoned
+}
+
+enum LearningStatus {
+  not_started
+  trial
+  formal
+  paused
+  finished
+}
+
+enum ScheduleType {
+  formal
+  trial
+  make_up
+  activity
+  other
+}
+
+enum ScheduleStatus {
+  scheduled
+  completed
+  cancelled
+  no_show
+}
+
+enum SignalLevel {
+  none
+  weak
+  medium
+  strong
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
+
+enum ProbabilityLevel {
+  low
+  medium
+  high
+}
+
+enum FollowupTaskType {
+  renewal
+  instrument_purchase
+  churn_recovery
+  trial_conversion
+  material_reminder
+  other
+}
+
+enum TaskStatus {
+  pending
+  processing
+  done
+  paused
+  closed
+}
+
+model User {
+  id           BigInt     @id @default(autoincrement())
+  name         String     @db.VarChar(50)
+  phone        String?    @unique @db.VarChar(30)
+  passwordHash String?    @map("password_hash") @db.VarChar(255)
+  role         UserRole   @default(teacher)
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  teacher Teacher?
+
+  @@map("users")
+}
+
+model Teacher {
+  id          BigInt   @id @default(autoincrement())
+  userId      BigInt   @unique @map("user_id")
+  teacherType String   @default("normal") @map("teacher_type") @db.VarChar(30)
+  canSchedule Boolean  @default(true) @map("can_schedule")
+  status      String   @default("active") @db.VarChar(30)
+  note        String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("teachers")
+}
+
+model Student {
+  id                 BigInt            @id @default(autoincrement())
+  name               String            @db.VarChar(50)
+  phone              String?           @db.VarChar(30)
+  wechat             String?           @db.VarChar(100)
+  sourceChannel      String?           @map("source_channel") @db.VarChar(100)
+  assignedTeacherId  BigInt?           @map("assigned_teacher_id")
+  assignedAcademicId BigInt?           @map("assigned_academic_id")
+  mainStatus         StudentMainStatus @default(pre_sale) @map("main_status")
+  preSaleStage       PreSaleStage      @default(new_lead) @map("pre_sale_stage")
+  learningStatus     LearningStatus    @default(not_started) @map("learning_status")
+  instrumentStatus   String            @default("unknown") @map("instrument_status") @db.VarChar(30)
+  note               String?           @db.Text
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  courseBalances CourseBalance[]
+  schedules      Schedule[]
+  lessonReviews  LessonReview[]
+  evaluations    AIStudentEvaluation[]
+  followupTasks  FollowupTask[]
+
+  @@map("students")
+}
+
+model Classroom {
+  id       BigInt @id @default(autoincrement())
+  name     String @db.VarChar(50)
+  capacity Int    @default(1)
+  status   String @default("available") @db.VarChar(30)
+  note     String? @db.Text
+
+  schedules Schedule[]
+
+  @@map("classrooms")
+}
+
+model Class {
+  id            BigInt   @id @default(autoincrement())
+  name          String   @db.VarChar(100)
+  classType     String   @default("one_on_one") @map("class_type") @db.VarChar(30)
+  mainTeacherId BigInt?  @map("main_teacher_id")
+  status        String   @default("active") @db.VarChar(30)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  schedules     Schedule[]
+  lessonReviews LessonReview[]
+
+  @@map("classes")
+}
+
+model Schedule {
+  id          BigInt         @id @default(autoincrement())
+  scheduleType ScheduleType  @default(formal) @map("schedule_type")
+  studentId   BigInt?       @map("student_id")
+  classId     BigInt?       @map("class_id")
+  teacherId   BigInt        @map("teacher_id")
+  classroomId BigInt        @map("classroom_id")
+  startTime   DateTime      @map("start_time")
+  endTime     DateTime      @map("end_time")
+  status      ScheduleStatus @default(scheduled)
+  deductLessons Boolean     @default(true) @map("deduct_lessons")
+  note        String?       @db.Text
+  createdBy   BigInt?       @map("created_by")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  student   Student?  @relation(fields: [studentId], references: [id])
+  class     Class?    @relation(fields: [classId], references: [id])
+  classroom Classroom @relation(fields: [classroomId], references: [id])
+
+  @@index([classroomId, startTime, endTime])
+  @@index([teacherId, startTime, endTime])
+  @@map("schedules")
+}
+
+model CourseBalance {
+  id               BigInt   @id @default(autoincrement())
+  studentId        BigInt   @map("student_id")
+  classId          BigInt?  @map("class_id")
+  totalLessons     Decimal  @default(0) @map("total_lessons") @db.Decimal(6, 2)
+  usedLessons      Decimal  @default(0) @map("used_lessons") @db.Decimal(6, 2)
+  remainingLessons Decimal  @default(0) @map("remaining_lessons") @db.Decimal(6, 2)
+  status           String   @default("normal") @db.VarChar(30)
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("course_balances")
+}
+
+model LessonReview {
+  id              BigInt      @id @default(autoincrement())
+  lessonId        BigInt      @map("lesson_id")
+  studentId       BigInt      @map("student_id")
+  classId         BigInt?     @map("class_id")
+  teacherId       BigInt      @map("teacher_id")
+  lessonDate      DateTime    @map("lesson_date") @db.Date
+  currentRepertoire String?   @map("current_repertoire") @db.VarChar(100)
+  currentTechniques String?   @map("current_techniques") @db.Text
+  teachingContent String      @map("teaching_content") @db.Text
+  mainDifficulties String?    @map("main_difficulties") @db.Text
+  specificConfusion String?   @map("specific_confusion") @db.Text
+  homework        String?     @db.Text
+  nextLessonSuggestion String? @map("next_lesson_suggestion") @db.Text
+  instrumentPurchaseSignal SignalLevel @default(none) @map("instrument_purchase_signal")
+  renewalSignal   SignalLevel @default(none) @map("renewal_signal")
+  churnRisk       RiskLevel   @default(low) @map("churn_risk")
+  needAcademicFollowup Boolean @default(false) @map("need_academic_followup")
+  followupSuggestion String?  @map("followup_suggestion") @db.Text
+  teacherExtraNotes String?   @map("teacher_extra_notes") @db.Text
+  aiEvaluated     Boolean     @default(false) @map("ai_evaluated")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  student     Student @relation(fields: [studentId], references: [id])
+  class       Class?  @relation(fields: [classId], references: [id])
+  evaluations AIStudentEvaluation[]
+
+  @@map("lesson_reviews")
+}
+
+model AIStudentEvaluation {
+  id                            BigInt           @id @default(autoincrement())
+  lessonReviewId                BigInt           @map("lesson_review_id")
+  lessonId                      BigInt           @map("lesson_id")
+  studentId                     BigInt           @map("student_id")
+  teacherId                     BigInt           @map("teacher_id")
+  learningScore                 Int?             @map("learning_score")
+  enthusiasmScore               Int?             @map("enthusiasm_score")
+  renewalProbability            ProbabilityLevel? @map("renewal_probability")
+  instrumentPurchaseProbability ProbabilityLevel? @map("instrument_purchase_probability")
+  churnRisk                     RiskLevel?       @map("churn_risk")
+  currentMainProblem            String?          @map("current_main_problem") @db.Text
+  teachingSuggestion            String?          @map("teaching_suggestion") @db.Text
+  academicFollowupSuggestion    String?          @map("academic_followup_suggestion") @db.Text
+  instrumentPurchaseSuggestion  String?          @map("instrument_purchase_suggestion") @db.Text
+  renewalSuggestion             String?          @map("renewal_suggestion") @db.Text
+  nextLessonFocus               String?          @map("next_lesson_focus") @db.Text
+  riskWarning                   String?          @map("risk_warning") @db.Text
+  suggestedTags                 String?          @map("suggested_tags") @db.Text
+  suggestedFollowupTasks        Json?            @map("suggested_followup_tasks")
+  rawAiResponse                 Json?            @map("raw_ai_response")
+  createdAt                     DateTime         @default(now()) @map("created_at")
+
+  student      Student      @relation(fields: [studentId], references: [id])
+  lessonReview LessonReview @relation(fields: [lessonReviewId], references: [id])
+
+  @@map("ai_student_evaluations")
+}
+
+model FollowupTask {
+  id              BigInt           @id @default(autoincrement())
+  studentId       BigInt           @map("student_id")
+  sourceType      String           @default("ai") @map("source_type") @db.VarChar(30)
+  sourceId        BigInt?          @map("source_id")
+  taskType        FollowupTaskType @map("task_type")
+  priority        ProbabilityLevel @default(medium)
+  title           String           @db.VarChar(200)
+  content         String?          @db.Text
+  suggestedScript String?          @map("suggested_script") @db.Text
+  assigneeId      BigInt?          @map("assignee_id")
+  dueDate         DateTime?        @map("due_date") @db.Date
+  status          TaskStatus       @default(pending)
+  followupResult  String?          @map("followup_result") @db.Text
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("followup_tasks")
+}
